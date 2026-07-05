@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>诊断工具</title>
+    <style>
+        body { background: #1a1a2e; color: #eee; font-family: monospace; padding: 20px; }
+        .ok { color: #4ade80; }
+        .err { color: #f87171; }
+        .info { color: #60a5fa; }
+        #log { white-space: pre-wrap; word-break: break-all; }
+    </style>
+</head>
+<body>
+    <h2>🔧 Unity WebGL 加载诊断</h2>
+    <div id="log">等待检测...</div>
+
+    <script>
+        var logEl = document.getElementById('log');
+        function log(msg, type) {
+            var cls = type || 'info';
+            logEl.innerHTML += '<span class="' + cls + '">' + msg + '</span>\n';
+            console.log(msg);
+        }
+
+        log('🟢 1. 页面已加载', 'ok');
+
+        // 检查 Build 文件夹是否存在（通过尝试加载一个已知文件）
+        var testFile = 'Build/PacbadaWebMobileFinal.loader.js';
+        log('🔍 2. 尝试检测文件: ' + testFile, 'info');
+
+        fetch(testFile)
+            .then(function(res) {
+                if (res.ok) {
+                    log('✅ loader.js 文件存在 (HTTP ' + res.status + ')', 'ok');
+                    // 检查文件内容是否包含 createUnityInstance
+                    return res.text();
+                } else {
+                    log('❌ loader.js 文件不存在 (HTTP ' + res.status + ')', 'err');
+                    log('   💡 请检查文件名是否完全一致（注意大小写）', 'err');
+                    throw new Error('404');
+                }
+            })
+            .then(function(code) {
+                if (code.indexOf('createUnityInstance') !== -1) {
+                    log('✅ loader.js 内容包含 createUnityInstance', 'ok');
+                } else {
+                    log('⚠️ loader.js 内容不包含 createUnityInstance', 'err');
+                }
+                // 尝试加载 data 文件
+                var dataFile = 'Build/PacbadaWebMobileFinal.data';
+                log('🔍 3. 检测 data 文件: ' + dataFile, 'info');
+                return fetch(dataFile);
+            })
+            .then(function(res) {
+                if (res.ok) {
+                    log('✅ data 文件存在 (HTTP ' + res.status + ')', 'ok');
+                } else {
+                    log('❌ data 文件不存在 (HTTP ' + res.status + ')', 'err');
+                }
+                // 尝试加载 wasm 文件
+                var wasmFile = 'Build/PacbadaWebMobileFinal.wasm';
+                log('🔍 4. 检测 wasm 文件: ' + wasmFile, 'info');
+                return fetch(wasmFile);
+            })
+            .then(function(res) {
+                if (res.ok) {
+                    log('✅ wasm 文件存在 (HTTP ' + res.status + ')', 'ok');
+                } else {
+                    log('❌ wasm 文件不存在 (HTTP ' + res.status + ')', 'err');
+                }
+                log('🎯 诊断完成！如果所有文件都存在，请检查 index.html 中文件名是否完全匹配。', 'ok');
+            })
+            .catch(function(err) {
+                log('❌ 检测过程中出错: ' + err.message, 'err');
+                log('💡 建议：去 Build 文件夹确认实际文件名，然后修改 index.html 中的 buildFiles', 'err');
+            });
+    </script>
+</body>
+</html>
