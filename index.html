@@ -240,7 +240,7 @@
         document.head.appendChild(loaderScript);
 
         // =========================================================
-        // 5. Unity 启动函数
+        // 5. Unity 启动函数（含强制适配逻辑）
         // =========================================================
         function startUnity() {
             var config = {
@@ -267,16 +267,42 @@
                 document.getElementById('loading-area').style.display = 'none';
                 console.log('🎮 游戏启动成功！');
 
-                // ★ 关键修复：强制触发 resize 事件，让 Unity 重新适配屏幕
-                setTimeout(function() {
+                // ★ 核心修复：反复强制触发 resize 和全屏切换
+                var attempts = 0;
+                var maxAttempts = 8;
+                var interval = setInterval(function() {
+                    attempts++;
+                    console.log('🔄 强制刷新适配 #' + attempts);
+                    // 触发 resize 事件
                     window.dispatchEvent(new Event('resize'));
-                    console.log('🔄 强制触发 resize 事件');
+                    // 重新矫正 Canvas
+                    fitCanvas();
+                    // 尝试调用 Unity 实例的 SetFullscreen 来强制刷新渲染
+                    if (instance && typeof instance.SetFullscreen === 'function') {
+                        try {
+                            instance.SetFullscreen(false);
+                            setTimeout(function() {
+                                instance.SetFullscreen(true);
+                            }, 50);
+                        } catch (e) {
+                            console.warn('SetFullscreen 调用失败:', e);
+                        }
+                    }
+                    if (attempts >= maxAttempts) {
+                        clearInterval(interval);
+                        console.log('✅ 适配刷新完成');
+                    }
                 }, 300);
 
-                // 多次矫正 Canvas（保险）
-                setTimeout(fitCanvas, 100);
-                setTimeout(fitCanvas, 500);
-                setTimeout(fitCanvas, 1000);
+                // 额外延时触发
+                setTimeout(function() {
+                    window.dispatchEvent(new Event('resize'));
+                    fitCanvas();
+                }, 1000);
+                setTimeout(function() {
+                    window.dispatchEvent(new Event('resize'));
+                    fitCanvas();
+                }, 2000);
             }
 
             function onError(err) {
