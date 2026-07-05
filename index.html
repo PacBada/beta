@@ -1,4 +1,4 @@
-<<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="utf-8">
@@ -53,9 +53,9 @@
         // !!! 请确保这 3 个文件名和你 Build 文件夹里的完全一致 !!!
         // =========================================================
         var buildFiles = {
-            loaderUrl: "Build/Build/PacbadaWebMobileFinal.loader.js",
+            loaderUrl: "Build/PacbadaWebMobileFinal.loader.js",
             dataUrl: "Build/PacbadaWebMobileFinal.data",
-            wasmUrl: "Build/PacbadaWebMobileFinal.wasm",   // 已修正：加上了 Build/
+            wasmUrl: "Build/PacbadaWebMobileFinal.wasm",
         };
 
         // =========================================================
@@ -148,10 +148,32 @@
 
         setTimeout(fitCanvas, 10);
 
-        // 开始加载
-        createUnityInstance(canvas, config, onProgress)
-            .then(onSuccess)
-            .catch(onError);
+        // =========================================================
+        // 【关键修改】手动加载 loader.js，然后调用 createUnityInstance
+        // =========================================================
+        var script = document.createElement('script');
+        script.src = buildFiles.loaderUrl;
+        script.onload = function() {
+            console.log('loader.js 加载完成');
+            if (typeof createUnityInstance !== 'undefined') {
+                console.log('createUnityInstance 已定义，开始加载游戏');
+                createUnityInstance(canvas, config, onProgress)
+                    .then(onSuccess)
+                    .catch(onError);
+            } else {
+                console.error('loader.js 加载后仍未定义 createUnityInstance');
+                statusEl.innerHTML = '❌ loader.js 执行失败，请查看控制台错误';
+                errorEl.style.display = 'block';
+                errorEl.innerHTML = 'loader.js 加载后未定义 createUnityInstance。请检查控制台是否有其他报错。';
+            }
+        };
+        script.onerror = function() {
+            console.error('loader.js 加载失败');
+            statusEl.innerHTML = '❌ loader.js 加载失败';
+            errorEl.style.display = 'block';
+            errorEl.innerHTML = 'loader.js 文件加载失败，请检查网络或文件名。';
+        };
+        document.head.appendChild(script);
     </script>
 </body>
 </html>
