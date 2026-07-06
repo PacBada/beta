@@ -132,7 +132,7 @@
         var unityInstance = null;
 
         // =========================================================
-        // ★ 核心适配函数（强制覆盖版 —— 专治画面放大）
+        // ★ 核心适配函数（Flex 居中版 —— 彻底解决画面偏移）
         // =========================================================
         function fitCanvas() {
             if (!canvas) return;
@@ -154,16 +154,12 @@
             displayW = Math.round(displayW);
             displayH = Math.round(displayH);
 
-            // CSS 显示尺寸
+            // 设置 CSS 显示尺寸（父容器 flex 自动居中）
             canvas.style.width = displayW + 'px';
             canvas.style.height = displayH + 'px';
-            canvas.style.position = 'absolute';
-            canvas.style.left = '50%';
-            canvas.style.top = '50%';
-            canvas.style.transform = 'translate(-50%, -50%)';
             canvas.style.background = '#000';
 
-            // ★★★★★ 关键修正：无论当前值如何，强制覆盖物理像素（去掉 if 判断）★★★★★
+            // ★★★★★ 强制覆盖物理像素（去掉 if 判断）★★★★★
             var realW = displayW * dpr;
             var realH = displayH * dpr;
             canvas.width = realW;
@@ -177,12 +173,11 @@
             }
         }
 
-        // ★ 全局刷新函数（供 Unity 或外部调用）
+        // ★ 全局刷新函数
         window.refreshGameCanvas = function() {
             console.log('🔄 收到刷新请求');
             dpr = window.devicePixelRatio || 1;
             fitCanvas();
-            // 额外触发 resize 事件，以防 Unity 内部监听
             window.dispatchEvent(new Event('resize'));
         };
 
@@ -196,14 +191,12 @@
 
         window.addEventListener('orientationchange', function() {
             console.log('🔄 orientationchange 事件触发');
-            // 首次延迟 600ms，再二次延迟 1200ms 双重保险
             setTimeout(function() {
                 window.refreshGameCanvas();
                 setTimeout(window.refreshGameCanvas, 600);
             }, 600);
         });
 
-        // 监听页面可见性变化（切回前台时重新适配）
         document.addEventListener('visibilitychange', function() {
             if (!document.hidden) {
                 console.log('👀 页面可见性变化（回到前台）');
@@ -281,22 +274,19 @@
                 console.log('🎮 游戏启动成功');
                 unityInstance = instance;
 
-                // 立即适配一次
                 window.refreshGameCanvas();
 
-                // ★ 关键修补：在 3-2-1 倒计时期间（0.5s ~ 5s）每 300ms 暴力刷新一次
-                // 彻底压住 Unity 内部可能错误修改 Canvas 物理像素的行为
+                // 倒计时期间高频刷新（0.5s ~ 5.0s，每 300ms 一次）
                 for (var i = 0; i < 16; i++) {
                     (function(index) {
-                        var delay = 500 + index * 300; // 500ms, 800ms, 1100ms ... 5000ms
+                        var delay = 500 + index * 300;
                         setTimeout(function() {
-                            console.log('⏰ 倒计时防放大刷新 #' + (index + 1));
+                            console.log('⏰ 防放大刷新 #' + (index + 1));
                             window.refreshGameCanvas();
                         }, delay);
                     })(i);
                 }
 
-                // 额外保险：6.5 秒再补一次
                 setTimeout(window.refreshGameCanvas, 6500);
             }
 
@@ -307,13 +297,10 @@
                 console.error('Unity 加载错误:', err);
             }
 
-            // 启动前先做一次适配
             setTimeout(window.refreshGameCanvas, 50);
-
             createUnityInstance(canvas, config, onProgress).then(onSuccess).catch(onError);
         }
 
-        // 初始适配
         setTimeout(window.refreshGameCanvas, 50);
     </script>
 </body>
