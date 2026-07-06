@@ -6,36 +6,26 @@
     <title>PacBada Mobile</title>
     <style>
         * { margin:0; padding:0; box-sizing:border-box; }
-        html, body { width:100%; height:100%; overflow:hidden; background:#000; position:fixed; top:0; left:0; }
+        html,body { width:100%; height:100%; overflow:hidden; background:#000; position:fixed; top:0; left:0; }
         #unity-container { width:100vw; height:100vh; background:#000; display:flex; justify-content:center; align-items:center; position:fixed; top:0; left:0; }
-        #unity-canvas { background:#000; display:block; transform:translateY(0px); }
+        #unity-canvas { background:#000; display:block; /* 居中由父级flex完成 */ }
         #loading-area { position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); color:#fff; font-family:Arial,sans-serif; z-index:20; text-align:center; width:80%; max-width:400px; }
         #progress-bg { width:100%; height:6px; background:#333; border-radius:3px; margin:12px 0 0; }
         #progress-fill { width:0%; height:100%; background:#00ccff; border-radius:3px; }
         #error-msg { color:#ff5555; font-size:14px; margin-top:20px; word-break:break-all; display:none; }
         #rotate-tip { position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.95); color:#fff; font-size:24px; display:none; justify-content:center; align-items:center; z-index:9999; flex-direction:column; text-align:center; font-family:Arial,sans-serif; }
         #rotate-tip span { font-size:16px; color:#aaa; margin-top:10px; }
-        @media (orientation:portrait) { #rotate-tip { display:flex !important; } }
-        @media (orientation:landscape) { #rotate-tip { display:none !important; } }
+        @media (orientation: portrait) { #rotate-tip { display:flex !important; } }
+        @media (orientation: landscape) { #rotate-tip { display:none !important; } }
     </style>
 </head>
 <body>
 
-    <div id="rotate-tip">📱⤵️Please rotate your phone<span>（Automatically enter after rotating the phone）</span></div>
-    <div id="loading-area">
-        <div id="loading-status">加载中...</div>
-        <div id="progress-bg"><div id="progress-fill"></div></div>
-        <div id="error-msg"></div>
-    </div>
+    <div id="rotate-tip">📱⤵️Please rotate your phone<span>(Automatically enter after rotating)</span></div>
+    <div id="loading-area"><div id="loading-status">加载中...</div><div id="progress-bg"><div id="progress-fill"></div></div><div id="error-msg"></div></div>
     <div id="unity-container"><canvas id="unity-canvas"></canvas></div>
 
     <script>
-        // =========================================================
-        // ★ 手动调整垂直偏移（正数下移，负数上移） ★
-        var VERTICAL_OFFSET = 0;   // 根据实际画面微调
-
-        // =========================================================
-        // 文件路径配置（请与 Build 文件夹内文件名完全一致）
         var buildFiles = {
             loaderUrl: "Build/PacbadaWebMobileFinal.loader.js",
             frameworkUrl: "Build/PacbadaWebMobileFinal.framework.js",
@@ -49,18 +39,15 @@
         var GAME_RATIO = GAME_W / GAME_H;
         var dpr = window.devicePixelRatio || 1;
         var unityInstance = null;
-
-        // 持久刷新定时器
-        var persistentTimer = null;
+        var resizeObserver = null;
 
         // =========================================================
-        // ★ 核心适配函数（带垂直微调）
-        function fitCanvas() {
-            if (!canvas) return;
-            var screenW = document.documentElement.clientWidth;
-            var screenH = document.documentElement.clientHeight;
-            if (screenW === 0 || screenH === 0) return;
-
+        // 计算当前应有的尺寸（CSS像素 + 物理像素）
+        // =========================================================
+        function getTargetSize() {
+            var screenW = window.innerWidth;
+            var screenH = window.innerHeight;
+            if (screenW === 0 || screenH === 0) return null;
             var screenRatio = screenW / screenH;
             var displayW, displayH;
             if (screenRatio > GAME_RATIO) {
@@ -72,114 +59,121 @@
             }
             displayW = Math.round(displayW);
             displayH = Math.round(displayH);
+            return {
+                cssW: displayW,
+                cssH: displayH,
+                realW: displayW * dpr,
+                realH: displayH * dpr
+            };
+        }
 
-            canvas.style.width = displayW + 'px';
-            canvas.style.height = displayH + 'px';
-            canvas.style.background = '#000';
-            canvas.style.transform = 'translateY(' + VERTICAL_OFFSET + 'px)';
+        // =========================================================
+        // 完整修正一次（CSS + 物理像素 + Unity分辨率）
+        // =========================================================
+        function applyCorrection() {
+            var size = getTargetSize();
+            if (!size) return;
 
-            var realW = displayW * dpr;
-            var realH = displayH * dpr;
-            canvas.width = realW;
-            canvas.height = realH;
+            // CSS尺寸
+            if (canvas.style.width !== size.cssW + 'px' || canvas.style.height !== size.cssH + 'px') {
+                canvas.style.width = size.cssW + 'px';
+                canvas.style.height = size.cssH + 'px';
+            }
 
-            if (unityInstance && typeof unityInstance.SetResolution === 'function') {
-                unityInstance.SetResolution(canvas.width, canvas.height);
+            // 物理像素（仅在确实不同时修改，避免不必要触发）
+            if (canvas.width !== size.realW || canvas.height !== size.realH) {
+                // 暂时断开 ResizeObserver，避免修改动作触发自身回调
+                if (resizeObserver) resizeObserver.disconnect();
+
+                canvas.width = size.realW;
+                canvas.height = size.realH;
+
+                // 重新观察
+                if (resizeObserver) resizeObserver.observe(canvas);
+
+                // 同步 Unity 内部渲染分辨率
+                if (unityInstance && typeof unityInstance.SetResolution === 'function') {
+                    unityInstance.SetResolution(size.realW, size.realH);
+                }
+                console.log('🛠️ 已修正分辨率：' + size.realW + 'x' + size.realH);
             }
         }
 
-        // ★ 全局刷新函数
-        window.refreshGameCanvas = function() {
-            dpr = window.devicePixelRatio || 1;
-            fitCanvas();
-            window.dispatchEvent(new Event('resize'));
-        };
-
         // =========================================================
-        // ★ 持久刷新策略（覆盖整个游戏生命周期）
-        function startPersistentRefresh() {
-            if (persistentTimer) return;
-            var phase = 0; // 0: 极密, 1: 中密, 2: 稀疏
-            var interval = 50; // 初始间隔 50ms
-            var elapsed = 0;
-
-            persistentTimer = setInterval(function() {
-                window.refreshGameCanvas();
-                elapsed += interval;
-
-                // 阶段切换
-                if (elapsed < 15000) {
-                    // 前 15 秒：50ms 间隔
-                    if (interval !== 50) { interval = 50; clearInterval(persistentTimer); persistentTimer = setInterval(arguments.callee, interval); }
-                } else if (elapsed < 30000) {
-                    // 15~30 秒：500ms 间隔
-                    if (interval !== 500) { interval = 500; clearInterval(persistentTimer); persistentTimer = setInterval(arguments.callee, interval); }
-                } else {
-                    // 30 秒后：2000ms 间隔（兜底）
-                    if (interval !== 2000) { interval = 2000; clearInterval(persistentTimer); persistentTimer = setInterval(arguments.callee, interval); }
-                }
-            }, interval);
-            console.log('▶️ 持久刷新已启动（动态间隔）');
+        // 启动 ResizeObserver（精确防篡改）
+        // =========================================================
+        function startObserver() {
+            if (resizeObserver) resizeObserver.disconnect();
+            resizeObserver = new ResizeObserver(function(entries) {
+                // Canvas 尺寸发生了变化（很可能是 Unity 内部改坏）
+                applyCorrection();
+            });
+            resizeObserver.observe(canvas);
         }
 
         // =========================================================
-        // 监听事件
+        // 常规事件处理（屏幕旋转、窗口变化）
+        // =========================================================
         window.addEventListener('resize', function() {
-            setTimeout(window.refreshGameCanvas, 200);
+            clearTimeout(this._resizeTimer);
+            this._resizeTimer = setTimeout(function() {
+                dpr = window.devicePixelRatio || 1;
+                applyCorrection();
+            }, 200);
         });
+
         window.addEventListener('orientationchange', function() {
             setTimeout(function() {
-                window.refreshGameCanvas();
-                setTimeout(window.refreshGameCanvas, 600);
+                dpr = window.devicePixelRatio || 1;
+                applyCorrection();
+                // 二次保险
+                setTimeout(function() {
+                    dpr = window.devicePixelRatio || 1;
+                    applyCorrection();
+                }, 600);
             }, 600);
         });
+
         document.addEventListener('visibilitychange', function() {
             if (!document.hidden) {
-                setTimeout(window.refreshGameCanvas, 300);
+                setTimeout(function() {
+                    dpr = window.devicePixelRatio || 1;
+                    applyCorrection();
+                }, 300);
             }
         });
 
         // =========================================================
-        // 加载状态
+        // 加载状态与手动脚本加载
+        // =========================================================
         var statusEl = document.getElementById('loading-status');
         var fillEl = document.getElementById('progress-fill');
         var errorEl = document.getElementById('error-msg');
-
         if (!window.WebGLRenderingContext) {
             statusEl.innerHTML = '浏览器不支持 WebGL';
             throw new Error('No WebGL');
         }
 
-        // =========================================================
-        // 手动加载 framework.js 与 loader.js
-        var frameworkLoaded = false;
-        var loaderLoaded = false;
-
+        var frameworkLoaded = false, loaderLoaded = false;
         function checkAndStart() {
-            if (frameworkLoaded && loaderLoaded) {
-                if (typeof unityFramework !== 'undefined' && typeof createUnityInstance !== 'undefined') {
-                    console.log('✅ 依赖就绪，启动 Unity');
-                    startUnity();
-                } else {
-                    statusEl.innerHTML = '❌ 缺少核心函数';
-                }
+            if (frameworkLoaded && loaderLoaded && typeof unityFramework !== 'undefined' && typeof createUnityInstance !== 'undefined') {
+                startUnity();
             }
         }
 
-        var frameworkScript = document.createElement('script');
-        frameworkScript.src = buildFiles.frameworkUrl;
-        frameworkScript.onload = function() { frameworkLoaded = true; checkAndStart(); };
-        frameworkScript.onerror = function() { statusEl.innerHTML = '❌ framework.js 加载失败'; };
-        document.head.appendChild(frameworkScript);
+        var fs = document.createElement('script'); fs.src = buildFiles.frameworkUrl;
+        fs.onload = function(){ frameworkLoaded = true; checkAndStart(); };
+        fs.onerror = function(){ statusEl.innerHTML = '❌ framework.js 加载失败'; };
+        document.head.appendChild(fs);
 
-        var loaderScript = document.createElement('script');
-        loaderScript.src = buildFiles.loaderUrl;
-        loaderScript.onload = function() { loaderLoaded = true; checkAndStart(); };
-        loaderScript.onerror = function() { statusEl.innerHTML = '❌ loader.js 加载失败'; };
-        document.head.appendChild(loaderScript);
+        var ls = document.createElement('script'); ls.src = buildFiles.loaderUrl;
+        ls.onload = function(){ loaderLoaded = true; checkAndStart(); };
+        ls.onerror = function(){ statusEl.innerHTML = '❌ loader.js 加载失败'; };
+        document.head.appendChild(ls);
 
         // =========================================================
         // 启动 Unity
+        // =========================================================
         function startUnity() {
             var config = {
                 dataUrl: buildFiles.dataUrl,
@@ -196,41 +190,40 @@
                 var pct = Math.min(100, Math.round(progress * 100));
                 fillEl.style.width = pct + '%';
                 statusEl.innerHTML = '加载中 ' + pct + '%';
-                if (pct >= 100) {
-                    document.getElementById('loading-area').style.display = 'none';
-                }
+                if (pct >= 100) document.getElementById('loading-area').style.display = 'none';
             }
 
             function onSuccess(instance) {
                 document.getElementById('loading-area').style.display = 'none';
-                console.log('🎮 游戏启动成功');
                 unityInstance = instance;
-
-                // 立即刷新
-                window.refreshGameCanvas();
-
-                // 启动持久刷新（覆盖整个生命周期）
-                // 延迟 300ms 开始，避免与启动时冲突
-                setTimeout(function() {
-                    startPersistentRefresh();
-                }, 300);
-
-                // 额外在 10 秒时强制刷新一次（确保）
-                setTimeout(window.refreshGameCanvas, 10000);
+                // 初始矫正
+                dpr = window.devicePixelRatio || 1;
+                applyCorrection();
+                // 开启 ResizeObserver 守卫
+                startObserver();
+                console.log('🎮 游戏启动成功，ResizeObserver 已激活');
             }
 
             function onError(err) {
                 statusEl.innerHTML = '❌ 加载失败';
                 errorEl.style.display = 'block';
                 errorEl.innerHTML = '错误详情：<br>' + (err.message || err);
-                console.error('Unity 加载错误:', err);
             }
 
-            setTimeout(window.refreshGameCanvas, 50);
+            // 尽早做一次初始适配
+            setTimeout(function() {
+                dpr = window.devicePixelRatio || 1;
+                applyCorrection();
+            }, 50);
+
             createUnityInstance(canvas, config, onProgress).then(onSuccess).catch(onError);
         }
 
-        setTimeout(window.refreshGameCanvas, 50);
+        // 页面刚打开时也矫正一次（防止初始偏移）
+        setTimeout(function() {
+            dpr = window.devicePixelRatio || 1;
+            applyCorrection();
+        }, 50);
     </script>
 </body>
 </html>
